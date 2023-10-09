@@ -1,12 +1,24 @@
-###################### 1. Import required modules and arguments from parsing.py ########################### #
+###################### 1. Import required modules and arguments from parsing.py #############################
+import torch.backends.cudnn
+
 from parsing import *
 from objects import *
 # https://stackoverflow.com/questions/31519815/import-symbols-starting-with-underscore
-# Functions start with underscore("_") will NOT be imported with wildcard letter("*")
-# from functions import *
+# Functions start with underscore("_") can NOT be imported with wildcard letter("*")
+from functions import *
 from functions import _simulation_sampler, _experience_sampler, _visualization_average
 
 def main():
+    # Control Randomness
+    random.seed(args.random_seed)
+    np.random.seed(args.random_seed)
+    torch.manual_seed(args.random_seed)
+    torch.cuda.manual_seed(args.random_seed)
+    torch.cuda.manual_seed_all(args.random_seed) # For Multi-GPU environment
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    torch.use_deterministic_algorithms(True)
+
     ######################################## 2. Run algorithm ##############################################
     # Directory setting
     if not os.path.exists(args.simulation_directory):
@@ -42,39 +54,42 @@ def main():
     # Experience sample queue or Replay memory (double-ended queue, deque)
     replay_memory = Experience_list(args=args)
 
+    # 2023-10-06: optimizer test (Line 76)
     optimizer = optim.AdamW(Deep_Q_Network.parameters(), lr=args.learning_rate, amsgrad=True)
 
-    # args.tau = args.boltzmann_tau_start
-    args.epsilon = args.epsilon_start
+    args.policy_param = args.policy_param_start
+    policy_param_string = "epsilon" if args.policy_type == "e-Greedy" else "tau" if args.policy_type == "Boltzmann" else "None"
 
     for m in range(1, args.max_iteration + 1):
         # Load CNN model if it exists and move to next step (m)
-        if os.path.exists(f'{args.deeplearningmodel_save_directory}\\DQN_Step_{m}.pkl'):
-            with open(f'{args.deeplearningmodel_save_directory}\\DQN_Step_{m}.pkl', 'rb') as md:
-                Deep_Q_Network = pickle.load(md)
-            # Decrease epsilon
-            # args.tau = args.boltzmann_tau_end + (args.boltzmann_tau_start - args.boltzmann_tau_end) * (
-            #             (1 - (((m - 1) / (args.max_iteration - 1)) ** 2)) ** 0.5)
-            args.epsilon = args.epsilon_start + (args.epsilon_end - args.epsilon_start) * m / args.max_iteration
-            # Tracking variation of epsilon
-            # args.boltzmann_tau_tracker.append(args.tau)
-            args.epsilon_tracker.append(args.epsilon)
-            print(f"Epsilon at step {m}: ", args.epsilon)
+        if os.path.exists(f'{args.deeplearningmodel_save_directory}\\DQN_Step_{m}.model'):
+            checkpoint = torch.load(f'{args.deeplearningmodel_save_directory}\\DQN_Step_{m}.model', map_location=args.device)
+            Deep_Q_Network.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            # 2023-10-06: Append each experience.pkls to replay_memory for accidently halted code
+            with open(f'{args.variable_save_directory}\\Experience_sample\\Experience_sample_{m}.pkl', 'rb') as expsam:
+                experience_sample = pickle.load(expsam)
+            for i in range(0, len(experience_sample)):
+                if len(replay_memory) == args.replay_memory_size:
+                    replay_memory.exp_list.popleft()
+                replay_memory.exp_list.append(experience_sample[i])
+            # Decrease policy parameter
+            args.policy_param = policy_param_function(args=args, algorithm_iter_count=m)
+            # Tracking variation of policy parameter
+            args.policy_param_tracker.append(args.policy_param)
+            print(f"Policy parameter ({policy_param_string}) at step {m}: ", args.policy_param, "\n")
             continue
 
         # Initialization of log file for CNN training sequence log
         if os.path.exists(f"DQN_Training_Step{m}.log"):
             os.remove(f"DQN_Training_Step{m}.log")
 
-        # Generate well placement simulation sample list, length of list is "args.sample_num_per_iter"
+        # Generate well placement simulation sample list, Length of list is "args.sample_num_per_iter"
         simulation_sample = []
 
         # Total num. of experience == args.sample_num_per_iter * (args.total_production_time / args.time_step)
         for i in range(1, args.sample_num_per_iter + 1):
-            # simulation_sample.append(
-            #     _simulation_sampler(args=args, algorithm_iter_count=m, sample_num=i, network=Deep_Q_Network, policy='Boltzmann'))
-            simulation_sample.append(
-                     _simulation_sampler(args=args, algorithm_iter_count=m, sample_num=i, network=Deep_Q_Network, policy="e-Greedy"))
+            simulation_sample.append(_simulation_sampler(args=args, algorithm_iter_count=m, sample_num=i, network=Deep_Q_Network, policy=args.policy_type))
 
         # Draw Average NPV and all Well placement sample
         _visualization_average(args=args, simulation_sample=simulation_sample, algorithm_iter_count=m)
@@ -98,6 +113,16 @@ def main():
             if len(replay_memory) == args.replay_memory_size:
                 replay_memory.exp_list.popleft()
             replay_memory.exp_list.append(experience_sample[i])
+
+        # 2023-09-11: Calclulate args.replay_batch_num with length of current experience list at current step (args.batch_size is fixed == 64)
+        if m <= round(args.max_iteration * 0.3):
+            args.replay_batch_num = ((len(replay_memory) // args.batch_size) + 1) * 2
+            print(f"Current length of replay_memory: {len(replay_memory)}")
+            print(f"Current args.replay_batch_num: {args.replay_batch_num}")
+        else: # m >= round(args.max_iteration * 0.3) + 1
+            args.replay_batch_num = ((round(args.max_iteration * args.sample_num_per_iter * args.total_well_num_max * 0.3) // args.batch_size) + 1) * 2
+            print(f"Current length of replay_memory: {len(replay_memory)}")
+            print(f"Current args.replay_batch_num: {args.replay_batch_num}")
 
         for b in range(1, args.replay_batch_num + 1):
             # # Extract b-th experience data from replay memory
@@ -182,18 +207,22 @@ def main():
                     loss.backward(retain_graph=True)
                     optimizer.step()
 
-        # Decrease epsilon
-        args.epsilon = args.epsilon_start + (args.epsilon_end - args.epsilon_start) * m / args.max_iteration
-        # Tracking variation of epsilon
-        args.epsilon_tracker.append(args.epsilon)
-        print(f"Epsilon at step {m}: ", args.epsilon)
+        # Decrease policy parameter
+        args.policy_param = policy_param_function(args=args, algorithm_iter_count=m)
+        # Tracking variation of policy parameter
+        args.policy_param_tracker.append(args.policy_param)
+        print(f"Policy parameter ({policy_param_string}) at step {m}: ", args.policy_param, "\n")
 
-        # Save CNN model
-        with open(f'{args.deeplearningmodel_save_directory}\\DQN_Step_{m}.pkl', 'wb') as md:
-            pickle.dump(Deep_Q_Network, md)
+        # Save CNN model and optimizer
+        torch.save({
+            'model_state_dict': Deep_Q_Network.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict()
+        }, f'{args.deeplearningmodel_save_directory}\\DQN_Step_{m}.model')
+        # torch.save(Deep_Q_Network, f'{args.deeplearningmodel_save_directory}\\DQN_Step_{m}.model')
+        # torch.save(optimizer, f'{args.deeplearningmodel_save_directory}\\Optimizer_Step_{m}.opt')
 
     # Do Last simulation sampling with Greedy policy
-    args.epsilon = args.epsilon_end
+    args.policy_param = args.policy_param_end
     simulation_sample_last = []
     for i in range(1, 10 + 1):
         simulation_sample_last.append(_simulation_sampler(args=args, algorithm_iter_count=m+1, sample_num=i, network=Deep_Q_Network, policy='Greedy'))

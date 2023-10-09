@@ -109,11 +109,6 @@ args.initial_SOIL = 0.75
 
 # Arguments: Random seed number
 args.random_seed = 202022673
-random.seed(args.random_seed)
-np.random.seed(args.random_seed)
-torch.manual_seed(args.random_seed)
-torch.backends.cudnn.benchmark = True
-torch.use_deterministic_algorithms(True)
 
 # Arguments: Price and Cost of oil and water
 args.oil_price = 60  # $/bbl
@@ -122,15 +117,16 @@ args.water_injection = 5  # $/bbl
 
 # Arguments: Hyperparameters for Deep Q Network (DQN)
 args.learning_rate = 0.001  # Learning rate Alpha
-args.boltzmann_tau_start = 5.0  # Start value of Temperature parameter at Boltzmann policy, Tau
-args.boltzmann_tau_end = 0.1  # End value of Temperature parameter at Boltzmann policy, Tau
-args.boltzmann_tau_tracker = [args.boltzmann_tau_start]
-args.epsilon_start = 0.9
-args.epsilon_end = 0.1
-args.epsilon_tracker = [args.epsilon_start]
+# 2023-10-04: Policy parameter (Tau for Boltzmann policy, Epsilon for Epsilon-greedy policy) were unified
+args.policy_type = "e-Greedy"
+args.policy_param_start = 1.0
+args.policy_param_end = 0.1
+# args.policy_param_tracker = [args.policy_param_start]
+args.policy_param_tracker = []
 args.reward_unit = 10 ** 6 # For scaling
 
-args.max_iteration = 20  # Maximum iteration num. of algorithm, MAX_STEPS
+# args.max_iteration = 20  # Maximum iteration num. of algorithm, MAX_STEPS
+args.max_iteration = 50  # 2023-10-04: Just for test
 
 args.sample_num_per_iter = 100  # Simulation sample num. of each iteration of algorithm
 args.experience_num_per_iter = args.total_well_num_max * args.sample_num_per_iter  # Experience sample num. of each iteration of algorithm, h
@@ -143,10 +139,12 @@ args.nn_update_num = 50  # CNN update number, U: [(1) Constant num. of iteration
 
 args.batch_size = 64  # Batch size, N
 
-args.replay_memory_size = 5000  # Replay memory size, K
+# 2023-10-04: Dynamic replay memory size (== round(70% of [max_iteration*sample_num_per_iter*action_num]))
+# args.replay_memory_size = 5000  # Replay memory size, K
+args.replay_memory_size = round(args.max_iteration * args.sample_num_per_iter * args.total_well_num_max * 0.7)  # Replay memory size, K
 
 args.discount_rate = 0.1  # Used for calculation of NPV
 # args.discount_factor = 1  # Used for Q-value update
-args.discount_factor = 0.5  # 2023-07-17: Just for test.
+args.discount_factor = 0.5  # Used for Q-value update
 
 args.input_flag = ('PRESSURE', 'SOIL', 'Well_placement')  # Data for State
