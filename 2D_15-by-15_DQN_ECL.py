@@ -54,7 +54,6 @@ def main():
     # Experience sample queue or Replay memory (double-ended queue, deque)
     replay_memory = Experience_list(args=args)
 
-    # 2023-10-06: optimizer test (Line 76)
     optimizer = optim.AdamW(Deep_Q_Network.parameters(), lr=args.learning_rate, amsgrad=True)
 
     args.policy_param = args.policy_param_start
@@ -132,7 +131,16 @@ def main():
             # We want to know indices of Experience samples which are selected, but DataLoader does not support fuction
             # of searching indices of selected Experience samples directly.
             # Thus, (1) Select Experience samples in replay_memory and (2) Perform DQN training with selected subset of Experience samples
-            exp_idx = [random.randint(0, len(replay_memory)-1) for r in range(args.batch_size)] # Indices for subset
+            ############################################################################################################
+            # 2023-10-10: PER TEST
+            if args.activate_PER == False:
+                exp_idx = [random.randint(0, len(replay_memory)-1) for r in range(args.batch_size)] # Indices for subset
+            # p = replay_memory.priority: deque, exp_dix = type(List)
+            elif args.activate_PER == True:
+                exp_priority = [np.power(replay_memory.exp_list[i].td_err + args.prob_compensation, args.prob_exponent).squeeze() for i in range(len(replay_memory))]
+                exp_denominator = sum(exp_priority)
+                exp_prob = [exp_priority[i]/exp_denominator for i in range(len(replay_memory))]
+                exp_idx = np.random.choice(a=range(len(replay_memory)), size=args.batch_size, replace=False, p=exp_prob)
             subset_current = Experience_list(args=args)
             for i in range(args.batch_size):
                 subset_current.exp_list.append(replay_memory.exp_list[exp_idx[i]])
@@ -141,6 +149,7 @@ def main():
                 element.current_state = element.next_state
             batch_current = DataLoader(dataset=subset_current, batch_size=args.batch_size, shuffle=False)
             batch_next = DataLoader(dataset=subset_next, batch_size=args.batch_size, shuffle=False)
+            ############################################################################################################
 
             for sample_current, sample_next in zip(batch_current, batch_next):
                 # To get related data by searching replay_memory with exp_list, for loop was used.
@@ -166,12 +175,12 @@ def main():
                     # next_Q.append(next_Q_map_mask[i][max_row][max_col])
                     next_Q.append(next_Q_map_mask[i][max_row[0]][max_col[0]])
 
-                    # if well_num == 5 (terminal state):
+                    # if well_num == total_well_num_max (terminal state):
                     #   yi = ri
                     if np.cumsum(replay_memory.exp_list[exp_idx[i]].next_state[2].detach().cpu().numpy())[-1] == 5:  # sample.next_state[2]: Well placement map
                         target_Q.append(replay_memory.exp_list[exp_idx[i]].reward.reshape(1))
 
-                    # elif well_num < 5 (non-terminal state):
+                    # elif well_num < total_well_num_max (non-terminal state):
                     #   yi = ri + args.discount_factor * max.Q_value(Q_network(s', a'))
                     elif np.cumsum(replay_memory.exp_list[exp_idx[i]].next_state[2].detach().cpu().numpy())[-1] < 5:  # sample.next_state[2]: Well placement map
                         target_Q.append((replay_memory.exp_list[exp_idx[i]].reward + args.discount_factor * (next_Q[i])).reshape(1))
@@ -200,6 +209,13 @@ def main():
                         log_write.write(f"Current Q Value = {currQ_debug}\n")
                         log_write.write(f"Loss = {loss.item()}\n\n")
 
+                    ####################################################################################################
+                    # 2023-10-10: PER TEST
+                    # TD-error = Target_Q - Current_Q
+                    if args.activate_PER == True:
+                        for i in range(len(target_Q)): replay_memory.exp_list[exp_idx[i]].td_err = abs(target_Q[i].detach().cpu().numpy()[0] - current_Q[i].detach().cpu().numpy()[0])
+                    ####################################################################################################
+
                     # Update Q-network parameter: theta = theta - args.learning_rate * grad(L(theta))
                     optimizer.zero_grad()
                     loss.requires_grad_(True)
@@ -218,8 +234,6 @@ def main():
             'model_state_dict': Deep_Q_Network.state_dict(),
             'optimizer_state_dict': optimizer.state_dict()
         }, f'{args.deeplearningmodel_save_directory}\\DQN_Step_{m}.model')
-        # torch.save(Deep_Q_Network, f'{args.deeplearningmodel_save_directory}\\DQN_Step_{m}.model')
-        # torch.save(optimizer, f'{args.deeplearningmodel_save_directory}\\Optimizer_Step_{m}.opt')
 
     # Do Last simulation sampling with Greedy policy
     args.policy_param = args.policy_param_end

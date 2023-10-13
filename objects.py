@@ -29,6 +29,9 @@ class Experience:
         self.current_action = None
         self.reward = None
         self.next_state = list
+        # 2023-10-10: Implementation of PER - Initial TD-error ==args.td_err_init
+        if args.activate_PER == True:
+            self.td_err = args.td_err_init
 
     def __transform__(self):
         self.current_state = torch.tensor(data=self.current_state, dtype=torch.float, device=self.args.device, requires_grad=False)

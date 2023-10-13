@@ -22,12 +22,6 @@ import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings(action='ignore')
 
-# 2023-09-26: Legacy (Not be used)
-# from datetime import datetime
-# import copy
-# import dill
-# import shutil
-
 ######################################## 2. Define arguments #############################################
 parser = argparse.ArgumentParser()
 args, unknown = parser.parse_known_args()
@@ -121,30 +115,39 @@ args.learning_rate = 0.001  # Learning rate Alpha
 args.policy_type = "e-Greedy"
 args.policy_param_start = 1.0
 args.policy_param_end = 0.1
-# args.policy_param_tracker = [args.policy_param_start]
 args.policy_param_tracker = []
 args.reward_unit = 10 ** 6 # For scaling
 
-# args.max_iteration = 20  # Maximum iteration num. of algorithm, MAX_STEPS
-args.max_iteration = 50  # 2023-10-04: Just for test
+args.max_iteration = 20  # Maximum iteration num. of algorithm, MAX_STEPS
+# args.max_iteration = 5  # Maximum iteration num. of algorithm, MAX_STEPS # 2023-10-10: PER TEST
 
 args.sample_num_per_iter = 100  # Simulation sample num. of each iteration of algorithm
+# args.sample_num_per_iter = 5  # Simulation sample num. of each iteration of algorithm # 2023-10-10: PER TEST
 args.experience_num_per_iter = args.total_well_num_max * args.sample_num_per_iter  # Experience sample num. of each iteration of algorithm, h
 
 args.replay_batch_num = 32  # Replay batch num., B
-# args.replay_batch_num = 4  # For debugging
 
 args.nn_update_num = 50  # CNN update number, U: [(1) Constant num. of iteration], (2) Lower limit of loss function value
-# args.nn_update_num = 10  # For debugging
+# args.nn_update_num = 5  # CNN update number, U: [(1) Constant num. of iteration], (2) Lower limit of loss function value # 2023-10-10: PER TEST
 
 args.batch_size = 64  # Batch size, N
+# args.batch_size = 4  # Batch size, N # 2023-10-10: PER TEST
 
 # 2023-10-04: Dynamic replay memory size (== round(70% of [max_iteration*sample_num_per_iter*action_num]))
-# args.replay_memory_size = 5000  # Replay memory size, K
 args.replay_memory_size = round(args.max_iteration * args.sample_num_per_iter * args.total_well_num_max * 0.7)  # Replay memory size, K
 
 args.discount_rate = 0.1  # Used for calculation of NPV
-# args.discount_factor = 1  # Used for Q-value update
 args.discount_factor = 0.5  # Used for Q-value update
 
 args.input_flag = ('PRESSURE', 'SOIL', 'Well_placement')  # Data for State
+
+# 2023-10-10: Prioritized Experience Replay (PER) option added
+# args.activate_PER = True
+args.activate_PER = False
+if args.activate_PER == True:
+    # "Foundations of Deep Reinforcement Learning" in Korean translation, pp. 124
+    args.td_err_init = 1000 # Initial TD-error value for PER
+    args.prob_compensation = 0.01 # Probability compensation factor for each experience when TD-error == 0 (epsilon)
+    args.prob_exponent = 1 # Constant value for Priority exponent, eta
+    args.prob_exponent_start = 0.1 # Start value for Priority exponent decaying with DQN step, eta
+    args.prob_exponent_end = 1 # End value for Priority exponent decaying with DQN step, eta
