@@ -37,6 +37,10 @@ def main():
         print('Figure directory does not exist: Created Figure directory\n')
         os.mkdir(args.figure_directory)
 
+    if not os.path.exists(args.log_directory):
+        print('Training log directory does not exist: Created Training log directory\n')
+        os.mkdir(args.log_directory)
+
     # 2023-07-17
     # For drawing figures
     # Read permeability map
@@ -80,8 +84,8 @@ def main():
             continue
 
         # Initialization of log file for CNN training sequence log
-        if os.path.exists(f"DQN_Training_Step{m}.log"):
-            os.remove(f"DQN_Training_Step{m}.log")
+        if os.path.exists(f"{args.log_directory}\\DQN_Training_Step{m}.log"):
+            os.remove(f"{args.log_directory}\\DQN_Training_Step{m}.log")
 
         # Generate well placement simulation sample list, Length of list is "args.sample_num_per_iter"
         simulation_sample = []
@@ -122,6 +126,11 @@ def main():
             args.replay_batch_num = ((round(args.max_iteration * args.sample_num_per_iter * args.total_well_num_max * 0.3) // args.batch_size) + 1) * 2
             print(f"Current length of replay_memory: {len(replay_memory)}")
             print(f"Current args.replay_batch_num: {args.replay_batch_num}")
+        with open(f"{args.log_directory}\\DQN_Training_Step{m}.log", "a") as log_write:
+            log_write.write(f"====== Info: Current Samplig Step {m} ======\n")
+            log_write.write(f"Current length of replay_memory: {len(replay_memory)}\n")
+            log_write.write(f"Current total batch num. at replay memory: {args.replay_batch_num}\n")
+            log_write.write(f"Current policy parameter ({policy_param_string}): {args.policy_param}\n\n")
 
         for b in range(1, args.replay_batch_num + 1):
             # # Extract b-th experience data from replay memory
@@ -203,7 +212,7 @@ def main():
                     loss = criterion(torch.cat(target_Q), torch.cat(current_Q))
 
                     # # For debugging (DQN training sequence log)
-                    with open(f"DQN_Training_Step{m}.log", "a") as log_write:
+                    with open(f"{args.log_directory}\\DQN_Training_Step{m}.log", "a") as log_write:
                         log_write.write(f"====== Info: Step {m}, Batch #{b}, CNN Update #{u} ======\n")
                         log_write.write(f"Target Q Value = {targetQ_debug}\n")
                         log_write.write(f"Current Q Value = {currQ_debug}\n")

@@ -35,9 +35,10 @@ args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 args.istensorboard = False
 
 '''
+2023-10-16
 Problem definition:
-Placing 5 production well sequentially in 2D 15-by-15 heterogeneous reservoir
-Period of well placement is 120 days, and total production period is 600 days (Well placement time from simulation starts: 0-120-240-360-480)
+Placing 3 production wells sequentially in 2D 15-by-15 heterogeneous reservoir
+Period of well placement is 90 days, and total production period is 270 days (Well placement time from simulation starts: 0-90-180)
 '''
 
 '''
@@ -46,31 +47,39 @@ Deep Q Network (DQN) State, Action, Environment, Reward definition:
 State: Pressure distribution, Oil saturation, Well placement map
 Action: Well placement (Coordinate of well location)
 Environment: Reservoir simulator
-Reward: NPV at each time segment
+Reward: NPV at each action time segment
 '''
 
 '''
 Directory setting: ([]: Folder)
 
 - [Master directory] (Prerequisite directory)
---- Algorithm launcher code (.py, .ipynb, ...) (Prerequisite file)
-
---- [Basic simulation data directory] (data) (Prerequisite directory)
+--- Algorithm launcher code (.py) (Prerequisite file)
+--- [Basic simulation data directory] ("data") (Prerequisite directory)
 ----- Simulation data template (Current simulator type: Eclipse, .DATA) (Prerequisite file)
 ----- Simulation permeability set file (.mat, .DATA, ...) (Prerequisite file)
-
---- [Simulation directory] (simulation)
+--- [Figure directory] ("figure")
+----- All well placement figure (.png): f"All Well placement-Step{num. of algorithm iteration}.png"
+----- All NPV figure (.png): f"NPV-Step{num. of algorithm iteration}.png"
+----- [Figure at each algorithm step dicrectory]: f"Step{num. of algorithm iteration}-WP"
+------- [Well placement at each algorithm step]: "WellPlacement"
+--------- Well placement figure for each sample (.png): f"Well placement-Step{num. of algorithm iteration}-Sample{sample number}.png"
+------- [NPV at each algorithm step]: "NPV"
+--------- NPV figure for each sample (.png): f"NPV-Step{num. of algorithm iteration}-Sample{sample number}.png"
+--- [Training log directory] ("log")
+----- Deep learning model training log file (.log): f"DQN_Training_Step{num. of algorithm iteration}.log"
+--- [Deep learning model and Optimizer storage directory] ("model")
+----- Deep learning model and Optimizer state file (.pkl): f"DQN_Step_{num. of algorithm iteration}.model"
+--- [Simulation directory] ("simulation")
 ----- [Simulation sample directory #f"Step{num. of algorithm iteration}_Sample{sample number}"]
-------- Simulation data file (.DATA): for each Well placement timestep
+------- Simulation data file (.DATA): for each Well placement (== Action) timestep
 ------- Simulation include file (PERMX.DATA, WELL.DATA)
 ------- # File naming convention: f"{file type}_Sam{sample number}_Seq{timestep index}.DATA", Sam: Sample number (starts from 1), Seq: Time sequence (starts from 1)
-
---- [Variable storage directory] (Variables)
------ Variable storage.pkl
------ Global variable storage.dill
-
---- [Deep learning model storage directory] (DL Model)
------ Deep learning model.pkl
+--- [Variable storage directory] ("variables")
+----- [Experiece sample storage directory] ("Experience_sample")
+------- Experience sample file (.pkl): f"Experience_sample_{num. of algorithm iteration}.pkl"
+----- [Simulation sample storage directory] ("Simulation_sample")
+------- Simulation sample file (.pkl): f"Simulation_sample_{num. of algorithm iteration}.pkl"
 '''
 
 # Modified from J.Y. Kim. (2020)
@@ -81,6 +90,7 @@ args.simulation_directory = 'simulation'
 args.variable_save_directory = 'variables'
 args.deeplearningmodel_save_directory = 'model'
 args.figure_directory = 'figure'
+args.log_directory = 'log'
 args.ecl_filename = '2D_ECL'
 args.perm_filename = 'PERMX'
 args.well_filename = 'WELL'
@@ -102,7 +112,8 @@ args.initial_PRESSURE = 3500  # psi
 args.initial_SOIL = 0.75
 
 # Arguments: Random seed number
-args.random_seed = 202022673
+# args.random_seed = 202022673
+args.random_seed = 123456789
 
 # Arguments: Price and Cost of oil and water
 args.oil_price = 60  # $/bbl
@@ -142,8 +153,8 @@ args.discount_factor = 0.5  # Used for Q-value update
 args.input_flag = ('PRESSURE', 'SOIL', 'Well_placement')  # Data for State
 
 # 2023-10-10: Prioritized Experience Replay (PER) option added
-# args.activate_PER = True
-args.activate_PER = False
+args.activate_PER = True
+# args.activate_PER = False
 if args.activate_PER == True:
     # "Foundations of Deep Reinforcement Learning" in Korean translation, pp. 124
     args.td_err_init = 1000 # Initial TD-error value for PER
